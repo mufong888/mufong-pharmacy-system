@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
-type Employee = {
-  id: string;
+type EmployeeRow = {
+  id: string; // uuid
+  employee_code: string; // E001
   name: string;
-  baseSalary: number;
+  base_salary: number;
   profit: number;
-  storeBonus: number;
+  store_bonus: number;
+  created_at?: string;
 };
 
 function calculatePersonalBonus(profit: number) {
@@ -15,10 +18,11 @@ function calculatePersonalBonus(profit: number) {
   return (Math.floor((profit - 70000) / 10000) + 1) * 1000;
 }
 
-function getNextEmployeeId(employees: Employee[]) {
+function getNextEmployeeCode(employees: EmployeeRow[]) {
   const numbers = employees.map((employee) =>
-    Number(employee.id.replace("E", ""))
+    Number(employee.employee_code.replace("E", ""))
   );
+
   const maxNumber = numbers.length > 0 ? Math.max(...numbers) : 0;
   const nextNumber = maxNumber + 1;
 
@@ -33,8 +37,8 @@ function getRankIcon(index: number) {
 }
 
 export default function BonusPage() {
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [employees, setEmployees] = useState<EmployeeRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [newName, setNewName] = useState("");
   const [newBaseSalary, setNewBaseSalary] = useState("");
@@ -47,32 +51,33 @@ export default function BonusPage() {
   const [editProfit, setEditProfit] = useState("");
   const [editStoreBonus, setEditStoreBonus] = useState("");
 
-  useEffect(() => {
-    const stored = localStorage.getItem("employees");
+  async function fetchEmployees() {
+    setLoading(true);
 
-    if (stored) {
-      setEmployees(JSON.parse(stored));
-    } else {
-      setEmployees([
-        { id: "E001", name: "王小明", baseSalary: 35000, profit: 90000, storeBonus: 1000 },
-        { id: "E002", name: "林小美", baseSalary: 35000, profit: 80000, storeBonus: 1000 },
-        { id: "E003", name: "陳阿華", baseSalary: 35000, profit: 70000, storeBonus: 1000 },
-      ]);
+    const { data, error } = await supabase
+      .from("employees")
+      .select("*")
+      .order("employee_code", { ascending: true });
+
+    if (error) {
+      console.error("讀取員工資料失敗：", error.message);
+      alert(`讀取員工資料失敗：${error.message}`);
+      setLoading(false);
+      return;
     }
 
-    setIsLoaded(true);
+    setEmployees(data ?? []);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    fetchEmployees();
   }, []);
-
-  useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem("employees", JSON.stringify(employees));
-    }
-  }, [employees, isLoaded]);
 
   const salaryData = employees.map((employee) => {
     const personalBonus = calculatePersonalBonus(employee.profit);
     const totalSalary =
-      employee.baseSalary + personalBonus + employee.storeBonus;
+      employee.base_salary + personalBonus + employee.store_bonus;
 
     return {
       ...employee,
@@ -82,7 +87,7 @@ export default function BonusPage() {
   });
 
   const totalBaseSalary = salaryData.reduce(
-    (sum, employee) => sum + employee.baseSalary,
+    (sum, employee) => sum + employee.base_salary,
     0
   );
 
@@ -92,7 +97,7 @@ export default function BonusPage() {
   );
 
   const totalStoreBonus = salaryData.reduce(
-    (sum, employee) => sum + employee.storeBonus,
+    (sum, employee) => sum + employee.store_bonus,
     0
   );
 
@@ -108,47 +113,63 @@ export default function BonusPage() {
 
   const rankedEmployees = [...salaryData].sort((a, b) => b.profit - a.profit);
 
-  function handleAddEmployee() {
+  async function handleAddEmployee() {
     if (!newName || !newBaseSalary || !newProfit || !newStoreBonus) {
       alert("請完整填寫所有欄位");
       return;
     }
 
-    const nextId = getNextEmployeeId(employees);
+    const nextCode = getNextEmployeeCode(employees);
 
-    const newEmployee: Employee = {
-      id: nextId,
-      name: newName,
-      baseSalary: Number(newBaseSalary),
-      profit: Number(newProfit),
-      storeBonus: Number(newStoreBonus),
-    };
+    const { error } = await supabase.from("employees").insert([
+      {
+        employee_code: nextCode,
+        name: newName,
+        base_salary: Number(newBaseSalary),
+        profit: Number(newProfit),
+        store_bonus: Number(newStoreBonus),
+      },
+    ]);
 
-    setEmployees([...employees, newEmployee]);
+    if (error) {
+      console.error("新增員工失敗：", error.message);
+      alert(`新增員工失敗：${error.message}`);
+      return;
+    }
 
     setNewName("");
     setNewBaseSalary("");
     setNewProfit("");
     setNewStoreBonus("");
+
+    fetchEmployees();
   }
 
-  function handleDeleteEmployee(id: string) {
+  async function handleDeleteEmployee(id: string) {
     const confirmed = window.confirm("確定要刪除這位員工嗎？");
     if (!confirmed) return;
 
-    setEmployees(employees.filter((employee) => employee.id !== id));
+    const { error } = await supabase.from("employees").delete().eq("id", id);
+
+    if (error) {
+      console.error("刪除失敗：", error.message);
+      alert(`刪除失敗：${error.message}`);
+      return;
+    }
 
     if (editingId === id) {
       handleCancelEdit();
     }
+
+    fetchEmployees();
   }
 
-  function handleStartEdit(employee: Employee) {
+  function handleStartEdit(employee: EmployeeRow) {
     setEditingId(employee.id);
     setEditName(employee.name);
-    setEditBaseSalary(String(employee.baseSalary));
+    setEditBaseSalary(String(employee.base_salary));
     setEditProfit(String(employee.profit));
-    setEditStoreBonus(String(employee.storeBonus));
+    setEditStoreBonus(String(employee.store_bonus));
   }
 
   function handleCancelEdit() {
@@ -159,26 +180,30 @@ export default function BonusPage() {
     setEditStoreBonus("");
   }
 
-  function handleSaveEdit(id: string) {
+  async function handleSaveEdit(id: string) {
     if (!editName || !editBaseSalary || !editProfit || !editStoreBonus) {
       alert("請完整填寫編輯欄位");
       return;
     }
 
-    const updatedEmployees = employees.map((employee) =>
-      employee.id === id
-        ? {
-            ...employee,
-            name: editName,
-            baseSalary: Number(editBaseSalary),
-            profit: Number(editProfit),
-            storeBonus: Number(editStoreBonus),
-          }
-        : employee
-    );
+    const { error } = await supabase
+      .from("employees")
+      .update({
+        name: editName,
+        base_salary: Number(editBaseSalary),
+        profit: Number(editProfit),
+        store_bonus: Number(editStoreBonus),
+      })
+      .eq("id", id);
 
-    setEmployees(updatedEmployees);
+    if (error) {
+      console.error("儲存失敗：", error.message);
+      alert(`儲存失敗：${error.message}`);
+      return;
+    }
+
     handleCancelEdit();
+    fetchEmployees();
   }
 
   return (
@@ -259,7 +284,7 @@ export default function BonusPage() {
                   <div>
                     <div style={rankingNameStyle}>
                       {employee.name}
-                      <span style={rankingIdStyle}> {employee.id}</span>
+                      <span style={rankingIdStyle}> {employee.employee_code}</span>
                     </div>
                     <div style={rankingSubStyle}>
                       本月毛利 NT$ {employee.profit.toLocaleString()}
@@ -290,7 +315,7 @@ export default function BonusPage() {
                 <div key={employee.id} style={{ marginBottom: "18px" }}>
                   <div style={barLabelRowStyle}>
                     <span style={barNameStyle}>
-                      {employee.name} ({employee.id})
+                      {employee.name} ({employee.employee_code})
                     </span>
                     <span style={barValueStyle}>{ratio.toFixed(1)}%</span>
                   </div>
@@ -312,136 +337,140 @@ export default function BonusPage() {
       <div style={sectionStyle}>
         <h2 style={sectionTitleStyle}>員工薪資明細</h2>
 
-        <div style={{ overflowX: "auto" }}>
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>員工編號</th>
-                <th style={thStyle}>員工</th>
-                <th style={thStyle}>底薪</th>
-                <th style={thStyle}>本月毛利</th>
-                <th style={thStyle}>個人獎金</th>
-                <th style={thStyle}>店級獎金</th>
-                <th style={thStyle}>總薪資</th>
-                <th style={thStyle}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {salaryData.map((employee) => {
-                const isEditing = editingId === employee.id;
+        {loading ? (
+          <p style={{ color: "#6b7280" }}>資料載入中...</p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>員工編號</th>
+                  <th style={thStyle}>員工</th>
+                  <th style={thStyle}>底薪</th>
+                  <th style={thStyle}>本月毛利</th>
+                  <th style={thStyle}>個人獎金</th>
+                  <th style={thStyle}>店級獎金</th>
+                  <th style={thStyle}>總薪資</th>
+                  <th style={thStyle}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {salaryData.map((employee) => {
+                  const isEditing = editingId === employee.id;
 
-                return (
-                  <tr key={employee.id}>
-                    <td style={tdStyle}>{employee.id}</td>
+                  return (
+                    <tr key={employee.id}>
+                      <td style={tdStyle}>{employee.employee_code}</td>
 
-                    <td style={tdStyle}>
-                      {isEditing ? (
-                        <input
-                          style={tableInputStyle}
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                        />
-                      ) : (
-                        employee.name
-                      )}
-                    </td>
-
-                    <td style={tdStyle}>
-                      {isEditing ? (
-                        <input
-                          style={tableInputStyle}
-                          type="number"
-                          value={editBaseSalary}
-                          onChange={(e) => setEditBaseSalary(e.target.value)}
-                        />
-                      ) : (
-                        employee.baseSalary.toLocaleString()
-                      )}
-                    </td>
-
-                    <td style={tdStyle}>
-                      {isEditing ? (
-                        <input
-                          style={tableInputStyle}
-                          type="number"
-                          value={editProfit}
-                          onChange={(e) => setEditProfit(e.target.value)}
-                        />
-                      ) : (
-                        employee.profit.toLocaleString()
-                      )}
-                    </td>
-
-                    <td style={tdStyle}>
-                      {isEditing
-                        ? calculatePersonalBonus(Number(editProfit || 0)).toLocaleString()
-                        : employee.personalBonus.toLocaleString()}
-                    </td>
-
-                    <td style={tdStyle}>
-                      {isEditing ? (
-                        <input
-                          style={tableInputStyle}
-                          type="number"
-                          value={editStoreBonus}
-                          onChange={(e) => setEditStoreBonus(e.target.value)}
-                        />
-                      ) : (
-                        employee.storeBonus.toLocaleString()
-                      )}
-                    </td>
-
-                    <td style={tdHighlightStyle}>
-                      {isEditing
-                        ? (
-                            Number(editBaseSalary || 0) +
-                            calculatePersonalBonus(Number(editProfit || 0)) +
-                            Number(editStoreBonus || 0)
-                          ).toLocaleString()
-                        : employee.totalSalary.toLocaleString()}
-                    </td>
-
-                    <td style={tdStyle}>
-                      <div style={actionGroupStyle}>
+                      <td style={tdStyle}>
                         {isEditing ? (
-                          <>
-                            <button
-                              style={saveButtonStyle}
-                              onClick={() => handleSaveEdit(employee.id)}
-                            >
-                              儲存
-                            </button>
-                            <button
-                              style={cancelButtonStyle}
-                              onClick={handleCancelEdit}
-                            >
-                              取消
-                            </button>
-                          </>
+                          <input
+                            style={tableInputStyle}
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                          />
                         ) : (
-                          <>
-                            <button
-                              style={editButtonStyle}
-                              onClick={() => handleStartEdit(employee)}
-                            >
-                              編輯
-                            </button>
-                            <button
-                              style={deleteButtonStyle}
-                              onClick={() => handleDeleteEmployee(employee.id)}
-                            >
-                              刪除
-                            </button>
-                          </>
+                          employee.name
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      </td>
+
+                      <td style={tdStyle}>
+                        {isEditing ? (
+                          <input
+                            style={tableInputStyle}
+                            type="number"
+                            value={editBaseSalary}
+                            onChange={(e) => setEditBaseSalary(e.target.value)}
+                          />
+                        ) : (
+                          employee.base_salary.toLocaleString()
+                        )}
+                      </td>
+
+                      <td style={tdStyle}>
+                        {isEditing ? (
+                          <input
+                            style={tableInputStyle}
+                            type="number"
+                            value={editProfit}
+                            onChange={(e) => setEditProfit(e.target.value)}
+                          />
+                        ) : (
+                          employee.profit.toLocaleString()
+                        )}
+                      </td>
+
+                      <td style={tdStyle}>
+                        {isEditing
+                          ? calculatePersonalBonus(Number(editProfit || 0)).toLocaleString()
+                          : employee.personalBonus.toLocaleString()}
+                      </td>
+
+                      <td style={tdStyle}>
+                        {isEditing ? (
+                          <input
+                            style={tableInputStyle}
+                            type="number"
+                            value={editStoreBonus}
+                            onChange={(e) => setEditStoreBonus(e.target.value)}
+                          />
+                        ) : (
+                          employee.store_bonus.toLocaleString()
+                        )}
+                      </td>
+
+                      <td style={tdHighlightStyle}>
+                        {isEditing
+                          ? (
+                              Number(editBaseSalary || 0) +
+                              calculatePersonalBonus(Number(editProfit || 0)) +
+                              Number(editStoreBonus || 0)
+                            ).toLocaleString()
+                          : employee.totalSalary.toLocaleString()}
+                      </td>
+
+                      <td style={tdStyle}>
+                        <div style={actionGroupStyle}>
+                          {isEditing ? (
+                            <>
+                              <button
+                                style={saveButtonStyle}
+                                onClick={() => handleSaveEdit(employee.id)}
+                              >
+                                儲存
+                              </button>
+                              <button
+                                style={cancelButtonStyle}
+                                onClick={handleCancelEdit}
+                              >
+                                取消
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                style={editButtonStyle}
+                                onClick={() => handleStartEdit(employee)}
+                              >
+                                編輯
+                              </button>
+                              <button
+                                style={deleteButtonStyle}
+                                onClick={() => handleDeleteEmployee(employee.id)}
+                              >
+                                刪除
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
