@@ -25,6 +25,13 @@ function getNextEmployeeId(employees: Employee[]) {
   return `E${String(nextNumber).padStart(3, "0")}`;
 }
 
+function getRankIcon(index: number) {
+  if (index === 0) return "🥇";
+  if (index === 1) return "🥈";
+  if (index === 2) return "🥉";
+  return "🏅";
+}
+
 export default function BonusPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -93,6 +100,13 @@ export default function BonusPage() {
     (sum, employee) => sum + employee.totalSalary,
     0
   );
+
+  const totalProfit = salaryData.reduce(
+    (sum, employee) => sum + employee.profit,
+    0
+  );
+
+  const rankedEmployees = [...salaryData].sort((a, b) => b.profit - a.profit);
 
   function handleAddEmployee() {
     if (!newName || !newBaseSalary || !newProfit || !newStoreBonus) {
@@ -171,7 +185,7 @@ export default function BonusPage() {
     <div style={{ padding: "32px" }}>
       <h1 style={pageTitleStyle}>💰 薪資獎金</h1>
       <p style={pageDescStyle}>
-        這裡會顯示員工底薪、個人獎金、店級獎金與總薪資。
+        這裡會顯示員工底薪、個人獎金、店級獎金、總薪資與績效排名。
       </p>
 
       <div style={summaryGridStyle}>
@@ -232,6 +246,67 @@ export default function BonusPage() {
         <button style={buttonStyle} onClick={handleAddEmployee}>
           新增員工
         </button>
+      </div>
+
+      <div style={rankingGridStyle}>
+        <div style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>🏆 員工績效排名</h2>
+          <div style={rankingListStyle}>
+            {rankedEmployees.map((employee, index) => (
+              <div key={employee.id} style={rankingItemStyle}>
+                <div style={rankingLeftStyle}>
+                  <span style={rankIconStyle}>{getRankIcon(index)}</span>
+                  <div>
+                    <div style={rankingNameStyle}>
+                      {employee.name}
+                      <span style={rankingIdStyle}> {employee.id}</span>
+                    </div>
+                    <div style={rankingSubStyle}>
+                      本月毛利 NT$ {employee.profit.toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={rankingRightStyle}>
+                  {(totalProfit > 0
+                    ? (employee.profit / totalProfit) * 100
+                    : 0
+                  ).toFixed(1)}
+                  %
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>📊 毛利佔比</h2>
+          <div style={rankingListStyle}>
+            {rankedEmployees.map((employee) => {
+              const ratio =
+                totalProfit > 0 ? (employee.profit / totalProfit) * 100 : 0;
+
+              return (
+                <div key={employee.id} style={{ marginBottom: "18px" }}>
+                  <div style={barLabelRowStyle}>
+                    <span style={barNameStyle}>
+                      {employee.name} ({employee.id})
+                    </span>
+                    <span style={barValueStyle}>{ratio.toFixed(1)}%</span>
+                  </div>
+                  <div style={barTrackStyle}>
+                    <div
+                      style={{
+                        ...barFillStyle,
+                        width: `${ratio}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       <div style={sectionStyle}>
@@ -392,6 +467,13 @@ const summaryGridStyle = {
   marginBottom: "32px",
 };
 
+const rankingGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: "20px",
+  marginBottom: "28px",
+};
+
 const cardStyle = {
   background: "#ffffff",
   borderRadius: "20px",
@@ -536,4 +618,84 @@ const tdHighlightStyle = {
   color: "#1f3b4d",
   fontWeight: "bold" as const,
   verticalAlign: "middle" as const,
+};
+
+const rankingListStyle = {
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: "14px",
+};
+
+const rankingItemStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  padding: "16px 18px",
+  background: "#f8fafc",
+  borderRadius: "16px",
+};
+
+const rankingLeftStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: "14px",
+};
+
+const rankIconStyle = {
+  fontSize: "28px",
+};
+
+const rankingNameStyle = {
+  fontSize: "18px",
+  fontWeight: "bold" as const,
+  color: "#1f3b4d",
+};
+
+const rankingIdStyle = {
+  fontSize: "14px",
+  fontWeight: "normal" as const,
+  color: "#7b9aa5",
+};
+
+const rankingSubStyle = {
+  fontSize: "14px",
+  color: "#6b7280",
+  marginTop: "4px",
+};
+
+const rankingRightStyle = {
+  fontSize: "24px",
+  fontWeight: "bold" as const,
+  color: "#84a59d",
+};
+
+const barLabelRowStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  marginBottom: "8px",
+};
+
+const barNameStyle = {
+  fontSize: "15px",
+  color: "#334155",
+};
+
+const barValueStyle = {
+  fontSize: "15px",
+  fontWeight: "bold" as const,
+  color: "#1f3b4d",
+};
+
+const barTrackStyle = {
+  width: "100%",
+  height: "12px",
+  background: "#e5eef0",
+  borderRadius: "999px",
+  overflow: "hidden",
+};
+
+const barFillStyle = {
+  height: "100%",
+  background: "#84a59d",
+  borderRadius: "999px",
 };
