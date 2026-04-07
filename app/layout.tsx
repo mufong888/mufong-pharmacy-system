@@ -39,19 +39,29 @@ export default function RootLayout({
                   📊 業績總覽
                 </Link>
               </li>
+
               <li>
                 <Link href="/bonus" style={linkStyle}>
                   💰 薪資獎金
                 </Link>
               </li>
+
               <li>
                 <Link href="/performance" style={linkStyle}>
                   👨‍⚕️ 員工績效
                 </Link>
               </li>
+
               <li>
                 <Link href="/trends" style={linkStyle}>
                   📈 趨勢分析
+                </Link>
+              </li>
+
+              {/* ✅ 新增這一段 */}
+              <li>
+                <Link href="/pos-import" style={linkStyle}>
+                  📥 POS 匯入
                 </Link>
               </li>
             </ul>

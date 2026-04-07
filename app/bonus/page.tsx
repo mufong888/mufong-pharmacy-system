@@ -1,16 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type EmployeeRow = {
-  id: string; // uuid
-  employee_code: string; // E001
+  id: string;
+  employee_code: string; // 001
   name: string;
   base_salary: number;
-  profit: number;
-  store_bonus: number;
   created_at?: string;
+};
+
+type ProfitSummaryRow = {
+  emp_code: string;
+  total_profit: number;
+};
+
+type SalaryRow = EmployeeRow & {
+  profit: number;
+  personalBonus: number;
+  storeBonus: number;
+  totalSalary: number;
 };
 
 function calculatePersonalBonus(profit: number) {
@@ -19,14 +29,14 @@ function calculatePersonalBonus(profit: number) {
 }
 
 function getNextEmployeeCode(employees: EmployeeRow[]) {
-  const numbers = employees.map((employee) =>
-    Number(employee.employee_code.replace("E", ""))
-  );
+  const numbers = employees
+    .map((employee) => Number(employee.employee_code))
+    .filter((num) => Number.isFinite(num));
 
   const maxNumber = numbers.length > 0 ? Math.max(...numbers) : 0;
   const nextNumber = maxNumber + 1;
 
-  return `E${String(nextNumber).padStart(3, "0")}`;
+  return String(nextNumber).padStart(3, "0");
 }
 
 function getRankIcon(index: number) {
@@ -36,24 +46,36 @@ function getRankIcon(index: number) {
   return "🏅";
 }
 
+function getCurrentMonthRange() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+  const startDate = `${start.getFullYear()}-${String(
+    start.getMonth() + 1
+  ).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;
+
+  const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(end.getDate()).padStart(2, "0")}`;
+
+  return { startDate, endDate };
+}
+
 export default function BonusPage() {
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
+  const [profitMap, setProfitMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   const [newName, setNewName] = useState("");
   const [newBaseSalary, setNewBaseSalary] = useState("");
-  const [newProfit, setNewProfit] = useState("");
-  const [newStoreBonus, setNewStoreBonus] = useState("");
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editBaseSalary, setEditBaseSalary] = useState("");
-  const [editProfit, setEditProfit] = useState("");
-  const [editStoreBonus, setEditStoreBonus] = useState("");
 
   async function fetchEmployees() {
-    setLoading(true);
-
     const { data, error } = await supabase
       .from("employees")
       .select("*")
@@ -61,61 +83,102 @@ export default function BonusPage() {
 
     if (error) {
       console.error("讀取員工資料失敗：", error.message);
-      alert(`讀取員工資料失敗：${error.message}`);
-      setLoading(false);
-      return;
+      throw new Error(error.message);
     }
 
-    setEmployees(data ?? []);
-    setLoading(false);
+    setEmployees((data ?? []) as EmployeeRow[]);
+  }
+
+  async function fetchCurrentMonthProfits() {
+    const { startDate, endDate } = getCurrentMonthRange();
+
+    const { data, error } = await supabase
+      .from("pos_sales_lines")
+      .select("emp_code,gross_profit,sale_date,line_type");
+
+    if (error) {
+      console.error("讀取 POS 毛利失敗：", error.message);
+      throw new Error(error.message);
+    }
+
+    const filtered = (data ?? []).filter((row: any) => {
+      if (!row?.emp_code) return false;
+      if (row?.line_type !== "sale") return false;
+      if (!row?.sale_date) return false;
+      return row.sale_date >= startDate && row.sale_date < endDate;
+    });
+
+    const grouped: Record<string, number> = {};
+
+    filtered.forEach((row: any) => {
+      const code = String(row.emp_code);
+      const profit = Number(row.gross_profit || 0);
+      grouped[code] = (grouped[code] || 0) + profit;
+    });
+
+    setProfitMap(grouped);
+  }
+
+  async function fetchAll() {
+    try {
+      setLoading(true);
+      await Promise.all([fetchEmployees(), fetchCurrentMonthProfits()]);
+    } catch (error: any) {
+      alert(error.message || "讀取資料失敗");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
-    fetchEmployees();
+    fetchAll();
   }, []);
 
-  const salaryData = employees.map((employee) => {
-    const personalBonus = calculatePersonalBonus(employee.profit);
-    const totalSalary =
-      employee.base_salary + personalBonus + employee.store_bonus;
+  const salaryData: SalaryRow[] = useMemo(() => {
+    return employees.map((employee) => {
+      const profit = Number(profitMap[employee.employee_code] || 0);
+      const personalBonus = calculatePersonalBonus(profit);
+      const storeBonus = 0;
+      const totalSalary =
+        Number(employee.base_salary || 0) + personalBonus + storeBonus;
 
-    return {
-      ...employee,
-      personalBonus,
-      totalSalary,
-    };
-  });
+      return {
+        ...employee,
+        profit,
+        personalBonus,
+        storeBonus,
+        totalSalary,
+      };
+    });
+  }, [employees, profitMap]);
 
   const totalBaseSalary = salaryData.reduce(
-    (sum, employee) => sum + employee.base_salary,
+    (sum, employee) => sum + Number(employee.base_salary || 0),
     0
   );
 
   const totalPersonalBonus = salaryData.reduce(
-    (sum, employee) => sum + employee.personalBonus,
+    (sum, employee) => sum + Number(employee.personalBonus || 0),
     0
   );
 
-  const totalStoreBonus = salaryData.reduce(
-    (sum, employee) => sum + employee.store_bonus,
-    0
-  );
+  const totalStoreBonus = 0;
 
   const totalSalary = salaryData.reduce(
-    (sum, employee) => sum + employee.totalSalary,
+    (sum, employee) => sum + Number(employee.totalSalary || 0),
     0
   );
 
   const totalProfit = salaryData.reduce(
-    (sum, employee) => sum + employee.profit,
+    (sum, employee) => sum + Number(employee.profit || 0),
     0
   );
 
   const rankedEmployees = [...salaryData].sort((a, b) => b.profit - a.profit);
 
   async function handleAddEmployee() {
-    if (!newName || !newBaseSalary || !newProfit || !newStoreBonus) {
-      alert("請完整填寫所有欄位");
+    if (!newName.trim() || !newBaseSalary.trim()) {
+      alert("請完整填寫員工姓名與底薪");
       return;
     }
 
@@ -124,10 +187,8 @@ export default function BonusPage() {
     const { error } = await supabase.from("employees").insert([
       {
         employee_code: nextCode,
-        name: newName,
+        name: newName.trim(),
         base_salary: Number(newBaseSalary),
-        profit: Number(newProfit),
-        store_bonus: Number(newStoreBonus),
       },
     ]);
 
@@ -139,10 +200,7 @@ export default function BonusPage() {
 
     setNewName("");
     setNewBaseSalary("");
-    setNewProfit("");
-    setNewStoreBonus("");
-
-    fetchEmployees();
+    fetchAll();
   }
 
   async function handleDeleteEmployee(id: string) {
@@ -161,27 +219,23 @@ export default function BonusPage() {
       handleCancelEdit();
     }
 
-    fetchEmployees();
+    fetchAll();
   }
 
   function handleStartEdit(employee: EmployeeRow) {
     setEditingId(employee.id);
     setEditName(employee.name);
     setEditBaseSalary(String(employee.base_salary));
-    setEditProfit(String(employee.profit));
-    setEditStoreBonus(String(employee.store_bonus));
   }
 
   function handleCancelEdit() {
     setEditingId(null);
     setEditName("");
     setEditBaseSalary("");
-    setEditProfit("");
-    setEditStoreBonus("");
   }
 
   async function handleSaveEdit(id: string) {
-    if (!editName || !editBaseSalary || !editProfit || !editStoreBonus) {
+    if (!editName.trim() || !editBaseSalary.trim()) {
       alert("請完整填寫編輯欄位");
       return;
     }
@@ -189,10 +243,8 @@ export default function BonusPage() {
     const { error } = await supabase
       .from("employees")
       .update({
-        name: editName,
+        name: editName.trim(),
         base_salary: Number(editBaseSalary),
-        profit: Number(editProfit),
-        store_bonus: Number(editStoreBonus),
       })
       .eq("id", id);
 
@@ -203,17 +255,22 @@ export default function BonusPage() {
     }
 
     handleCancelEdit();
-    fetchEmployees();
+    fetchAll();
   }
 
   return (
     <div style={{ padding: "32px" }}>
       <h1 style={pageTitleStyle}>💰 薪資獎金</h1>
       <p style={pageDescStyle}>
-        這裡會顯示員工底薪、個人獎金、店級獎金、總薪資與績效排名。
+        目前已完成：員工底薪、當月毛利、個人獎金、總薪資、績效排名。店級獎金暫時固定為 0。
       </p>
 
       <div style={summaryGridStyle}>
+        <div style={cardStyle}>
+          <p style={labelStyle}>員工人數</p>
+          <h2 style={valueStyle}>{employees.length}</h2>
+        </div>
+
         <div style={cardStyle}>
           <p style={labelStyle}>本月總底薪</p>
           <h2 style={valueStyle}>NT$ {totalBaseSalary.toLocaleString()}</h2>
@@ -222,11 +279,6 @@ export default function BonusPage() {
         <div style={cardStyle}>
           <p style={labelStyle}>本月個人獎金</p>
           <h2 style={valueStyle}>NT$ {totalPersonalBonus.toLocaleString()}</h2>
-        </div>
-
-        <div style={cardStyle}>
-          <p style={labelStyle}>本月店級獎金</p>
-          <h2 style={valueStyle}>NT$ {totalStoreBonus.toLocaleString()}</h2>
         </div>
 
         <div style={cardStyle}>
@@ -251,20 +303,6 @@ export default function BonusPage() {
             type="number"
             value={newBaseSalary}
             onChange={(e) => setNewBaseSalary(e.target.value)}
-          />
-          <input
-            style={inputStyle}
-            placeholder="本月毛利"
-            type="number"
-            value={newProfit}
-            onChange={(e) => setNewProfit(e.target.value)}
-          />
-          <input
-            style={inputStyle}
-            placeholder="店級獎金"
-            type="number"
-            value={newStoreBonus}
-            onChange={(e) => setNewStoreBonus(e.target.value)}
           />
         </div>
 
@@ -301,6 +339,10 @@ export default function BonusPage() {
                 </div>
               </div>
             ))}
+
+            {rankedEmployees.length === 0 && (
+              <div style={emptyBoxStyle}>目前尚無員工資料</div>
+            )}
           </div>
         </div>
 
@@ -330,6 +372,10 @@ export default function BonusPage() {
                 </div>
               );
             })}
+
+            {rankedEmployees.length === 0 && (
+              <div style={emptyBoxStyle}>目前尚無毛利資料</div>
+            )}
           </div>
         </div>
       </div>
@@ -383,48 +429,25 @@ export default function BonusPage() {
                             onChange={(e) => setEditBaseSalary(e.target.value)}
                           />
                         ) : (
-                          employee.base_salary.toLocaleString()
+                          Number(employee.base_salary || 0).toLocaleString()
                         )}
                       </td>
 
                       <td style={tdStyle}>
-                        {isEditing ? (
-                          <input
-                            style={tableInputStyle}
-                            type="number"
-                            value={editProfit}
-                            onChange={(e) => setEditProfit(e.target.value)}
-                          />
-                        ) : (
-                          employee.profit.toLocaleString()
-                        )}
+                        {employee.profit.toLocaleString()}
                       </td>
 
                       <td style={tdStyle}>
-                        {isEditing
-                          ? calculatePersonalBonus(Number(editProfit || 0)).toLocaleString()
-                          : employee.personalBonus.toLocaleString()}
+                        {employee.personalBonus.toLocaleString()}
                       </td>
 
-                      <td style={tdStyle}>
-                        {isEditing ? (
-                          <input
-                            style={tableInputStyle}
-                            type="number"
-                            value={editStoreBonus}
-                            onChange={(e) => setEditStoreBonus(e.target.value)}
-                          />
-                        ) : (
-                          employee.store_bonus.toLocaleString()
-                        )}
-                      </td>
+                      <td style={tdStyle}>0</td>
 
                       <td style={tdHighlightStyle}>
                         {isEditing
                           ? (
                               Number(editBaseSalary || 0) +
-                              calculatePersonalBonus(Number(editProfit || 0)) +
-                              Number(editStoreBonus || 0)
+                              calculatePersonalBonus(employee.profit)
                             ).toLocaleString()
                           : employee.totalSalary.toLocaleString()}
                       </td>
@@ -467,6 +490,14 @@ export default function BonusPage() {
                     </tr>
                   );
                 })}
+
+                {salaryData.length === 0 && (
+                  <tr>
+                    <td style={emptyTableStyle} colSpan={8}>
+                      目前尚無員工資料
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -517,7 +548,7 @@ const labelStyle = {
 };
 
 const valueStyle = {
-  fontSize: "36px",
+  fontSize: "32px",
   fontWeight: "bold" as const,
   color: "#1f3b4d",
 };
@@ -538,9 +569,10 @@ const sectionTitleStyle = {
 
 const formGridStyle = {
   display: "grid",
-  gridTemplateColumns: "repeat(4, 1fr)",
+  gridTemplateColumns: "repeat(2, 1fr)",
   gap: "12px",
   marginBottom: "16px",
+  maxWidth: "600px",
 };
 
 const inputStyle = {
@@ -727,4 +759,19 @@ const barFillStyle = {
   height: "100%",
   background: "#84a59d",
   borderRadius: "999px",
+};
+
+const emptyBoxStyle = {
+  padding: "24px",
+  background: "#f8fafc",
+  borderRadius: "16px",
+  color: "#64748b",
+  fontSize: "15px",
+  lineHeight: 1.8,
+};
+
+const emptyTableStyle = {
+  padding: "24px 10px",
+  textAlign: "center" as const,
+  color: "#94a3b8",
 };
