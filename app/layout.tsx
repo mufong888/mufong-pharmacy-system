@@ -41,17 +41,17 @@ export default function RootLayout({
               </li>
               <li>
                 <Link href="/bonus" style={linkStyle}>
-                  💰 員工獎金
+                  💰 薪資獎金
                 </Link>
               </li>
               <li>
-                <Link href="/inventory" style={linkStyle}>
-                  📦 盤點紀錄
+                <Link href="/performance" style={linkStyle}>
+                  👨‍⚕️ 員工績效
                 </Link>
               </li>
               <li>
-                <Link href="/purchase" style={linkStyle}>
-                  📉 進貨追蹤
+                <Link href="/trends" style={linkStyle}>
+                  📈 趨勢分析
                 </Link>
               </li>
             </ul>
