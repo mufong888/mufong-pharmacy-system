@@ -41,24 +41,24 @@ export default function DashboardPage() {
     { month: "12月", general: 480, chronic: 350 },
   ];
 
-  const todaySales = 12800;
-  const monthlySales = 181000;
-  const monthlyGrossProfit = 63200;
-  const yearlySales = yearlySalesData.reduce((sum, item) => sum + item.sales, 0);
+  const todaySales: number = 12800;
+  const monthlySales: number = 181000;
+  const monthlyGrossProfit: number = 63200;
+  const yearlySales: number = yearlySalesData.reduce((sum, item) => sum + item.sales, 0);
 
-  const lastYearSales = 1680000;
-  const lastMonthSales = 165000;
-  const sameMonthLastYearSales = 158000;
+  const lastYearSales: number = 1680000;
+  const lastMonthSales: number = 165000;
+  const sameMonthLastYearSales: number = 158000;
 
-  const monthlyGeneralRx = 420;
-  const monthlyChronicRx = 310;
-  const monthlyTotalRx = monthlyGeneralRx + monthlyChronicRx;
+  const monthlyGeneralRx: number = 420;
+  const monthlyChronicRx: number = 310;
+  const monthlyTotalRx: number = monthlyGeneralRx + monthlyChronicRx;
 
-  const yearlyGeneralRx = 4620;
-  const yearlyChronicRx = 3380;
-  const yearlyTotalRx = yearlyGeneralRx + yearlyChronicRx;
+  const yearlyGeneralRx: number = 4620;
+  const yearlyChronicRx: number = 3380;
+  const yearlyTotalRx: number = yearlyGeneralRx + yearlyChronicRx;
 
-  const sameMonthLastYearRx = 680;
+  const sameMonthLastYearRx: number = 680;
 
   const yearlyGrowthRate =
     lastYearSales === 0 ? 0 : ((yearlySales - lastYearSales) / lastYearSales) * 100;
@@ -215,7 +215,7 @@ export default function DashboardPage() {
                 tickFormatter={(value) => `${Number(value).toLocaleString("zh-TW")}`}
               />
               <Tooltip
-                formatter={(value: number) => formatCurrency(value)}
+                formatter={(value) => formatCurrency(Number(value))}
                 labelFormatter={(label) => `${label}`}
               />
               <Line
@@ -243,10 +243,15 @@ export default function DashboardPage() {
               <XAxis dataKey="month" />
               <YAxis />
               <Tooltip
-                formatter={(value: number, name: string) => {
-                  if (name === "一般箋") return [`${value} 張`, "一般箋"];
-                  if (name === "慢性處方箋") return [`${value} 張`, "慢性處方箋"];
-                  return [`${value} 張`, name];
+                formatter={(value, name) => {
+                  const label =
+                    name === "general"
+                      ? "一般箋"
+                      : name === "chronic"
+                      ? "慢性處方箋"
+                      : String(name);
+
+                  return [`${Number(value)} 張`, label];
                 }}
               />
               <Line
@@ -254,7 +259,7 @@ export default function DashboardPage() {
                 dataKey="general"
                 stroke="#84A59D"
                 strokeWidth={3}
-                name="一般箋"
+                name="general"
                 dot={{ r: 4 }}
               />
               <Line
@@ -262,7 +267,7 @@ export default function DashboardPage() {
                 dataKey="chronic"
                 stroke="#F28482"
                 strokeWidth={3}
-                name="慢性處方箋"
+                name="chronic"
                 dot={{ r: 4 }}
               />
             </LineChart>
