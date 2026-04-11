@@ -47,6 +47,12 @@ export default function RootLayout({
               </li>
 
               <li>
+                <Link href="/top-products" style={linkStyle}>
+                  📦 商品排行
+                </Link>
+              </li>
+
+              <li>
                 <Link href="/prescription" style={linkStyle}>
                   💊 處方輸入
                 </Link>
@@ -64,11 +70,7 @@ export default function RootLayout({
                 </Link>
               </li>
 
-              <li>
-                <Link href="/performance" style={linkStyle}>
-                  👨‍⚕️ 員工績效
-                </Link>
-              </li>
+              
             </ul>
           </aside>
 

@@ -5,15 +5,10 @@ import { supabase } from "@/lib/supabase";
 
 type EmployeeRow = {
   id: string;
-  employee_code: string; // 001
+  employee_code: string;
   name: string;
   base_salary: number;
   created_at?: string;
-};
-
-type ProfitSummaryRow = {
-  emp_code: string;
-  total_profit: number;
 };
 
 type SalaryRow = EmployeeRow & {
@@ -25,7 +20,7 @@ type SalaryRow = EmployeeRow & {
 
 function calculatePersonalBonus(profit: number) {
   if (profit < 70000) return 0;
-  return (Math.floor((profit - 70000) / 10000) + 1) * 1000;
+  return (Math.floor((profit - 100000) / 10000) + 1) * 1000;
 }
 
 function getNextEmployeeCode(employees: EmployeeRow[]) {
@@ -46,27 +41,15 @@ function getRankIcon(index: number) {
   return "🏅";
 }
 
-function getCurrentMonthRange() {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-
-  const startDate = `${start.getFullYear()}-${String(
-    start.getMonth() + 1
-  ).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;
-
-  const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(
-    2,
-    "0"
-  )}-${String(end.getDate()).padStart(2, "0")}`;
-
-  return { startDate, endDate };
-}
-
 export default function BonusPage() {
+  const now = new Date();
+
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [profitMap, setProfitMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
 
   const [newName, setNewName] = useState("");
   const [newBaseSalary, setNewBaseSalary] = useState("");
@@ -74,6 +57,8 @@ export default function BonusPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editBaseSalary, setEditBaseSalary] = useState("");
+
+  const [savingProfitCode, setSavingProfitCode] = useState<string | null>(null);
 
   async function fetchEmployees() {
     const { data, error } = await supabase
@@ -89,40 +74,31 @@ export default function BonusPage() {
     setEmployees((data ?? []) as EmployeeRow[]);
   }
 
-  async function fetchCurrentMonthProfits() {
-    const { startDate, endDate } = getCurrentMonthRange();
-
+  async function fetchMonthlyProfits(year: number, month: number) {
     const { data, error } = await supabase
-      .from("pos_sales_lines")
-      .select("emp_code,gross_profit,sale_date,line_type");
+      .from("employee_monthly_profit")
+      .select("employee_code, profit")
+      .eq("year", year)
+      .eq("month", month);
 
     if (error) {
-      console.error("讀取 POS 毛利失敗：", error.message);
+      console.error("讀取員工毛利失敗：", error.message);
       throw new Error(error.message);
     }
 
-    const filtered = (data ?? []).filter((row: any) => {
-      if (!row?.emp_code) return false;
-      if (row?.line_type !== "sale") return false;
-      if (!row?.sale_date) return false;
-      return row.sale_date >= startDate && row.sale_date < endDate;
-    });
-
     const grouped: Record<string, number> = {};
 
-    filtered.forEach((row: any) => {
-      const code = String(row.emp_code);
-      const profit = Number(row.gross_profit || 0);
-      grouped[code] = (grouped[code] || 0) + profit;
+    (data ?? []).forEach((row: any) => {
+      grouped[String(row.employee_code)] = Number(row.profit || 0);
     });
 
     setProfitMap(grouped);
   }
 
-  async function fetchAll() {
+  async function fetchAll(year = selectedYear, month = selectedMonth) {
     try {
       setLoading(true);
-      await Promise.all([fetchEmployees(), fetchCurrentMonthProfits()]);
+      await Promise.all([fetchEmployees(), fetchMonthlyProfits(year, month)]);
     } catch (error: any) {
       alert(error.message || "讀取資料失敗");
     } finally {
@@ -131,8 +107,8 @@ export default function BonusPage() {
   }
 
   useEffect(() => {
-    fetchAll();
-  }, []);
+    fetchAll(selectedYear, selectedMonth);
+  }, [selectedYear, selectedMonth]);
 
   const salaryData: SalaryRow[] = useMemo(() => {
     return employees.map((employee) => {
@@ -258,12 +234,84 @@ export default function BonusPage() {
     fetchAll();
   }
 
+  async function handleProfitChange(employeeCode: string, value: string) {
+    setProfitMap((prev) => ({
+      ...prev,
+      [employeeCode]: Number(value || 0),
+    }));
+  }
+
+  async function handleSaveProfit(employeeCode: string) {
+    try {
+      setSavingProfitCode(employeeCode);
+
+      const profit = Number(profitMap[employeeCode] || 0);
+
+      const { error } = await supabase.from("employee_monthly_profit").upsert(
+        [
+          {
+            employee_code: employeeCode,
+            year: selectedYear,
+            month: selectedMonth,
+            profit,
+          },
+        ],
+        {
+          onConflict: "employee_code,year,month",
+        }
+      );
+
+      if (error) {
+        console.error("儲存毛利失敗：", error.message);
+        alert(`儲存毛利失敗：${error.message}`);
+        return;
+      }
+
+      alert(`已儲存 ${selectedYear} 年 ${selectedMonth} 月毛利`);
+      fetchAll();
+    } finally {
+      setSavingProfitCode(null);
+    }
+  }
+
   return (
     <div style={{ padding: "32px" }}>
       <h1 style={pageTitleStyle}>💰 薪資獎金</h1>
       <p style={pageDescStyle}>
-        目前已完成：員工底薪、當月毛利、個人獎金、總薪資、績效排名。店級獎金暫時固定為 0。
+        毛利已改為手動輸入，可切換年份與月份查看歷年紀錄。
       </p>
+
+      <div style={filterBarStyle}>
+        <div style={filterItemStyle}>
+          <label style={filterLabelStyle}>年份</label>
+          <select
+            style={selectStyle}
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+          >
+            {[2024, 2025, 2026, 2027].map((year) => (
+              <option key={year} value={year}>
+                {year} 年
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={filterItemStyle}>
+          <label style={filterLabelStyle}>月份</label>
+          <select
+            style={selectStyle}
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(Number(e.target.value))}
+          >
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+              <option key={month} value={month}>
+                {month} 月
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
       <div style={summaryGridStyle}>
         <div style={cardStyle}>
@@ -272,17 +320,23 @@ export default function BonusPage() {
         </div>
 
         <div style={cardStyle}>
-          <p style={labelStyle}>本月總底薪</p>
+          <p style={labelStyle}>
+            {selectedYear} 年 {selectedMonth} 月總底薪
+          </p>
           <h2 style={valueStyle}>NT$ {totalBaseSalary.toLocaleString()}</h2>
         </div>
 
         <div style={cardStyle}>
-          <p style={labelStyle}>本月個人獎金</p>
+          <p style={labelStyle}>
+            {selectedYear} 年 {selectedMonth} 月個人獎金
+          </p>
           <h2 style={valueStyle}>NT$ {totalPersonalBonus.toLocaleString()}</h2>
         </div>
 
         <div style={cardStyle}>
-          <p style={labelStyle}>本月總薪資</p>
+          <p style={labelStyle}>
+            {selectedYear} 年 {selectedMonth} 月總薪資
+          </p>
           <h2 style={valueStyle}>NT$ {totalSalary.toLocaleString()}</h2>
         </div>
       </div>
@@ -325,7 +379,8 @@ export default function BonusPage() {
                       <span style={rankingIdStyle}> {employee.employee_code}</span>
                     </div>
                     <div style={rankingSubStyle}>
-                      本月毛利 NT$ {employee.profit.toLocaleString()}
+                      {selectedYear} 年 {selectedMonth} 月毛利 NT${" "}
+                      {employee.profit.toLocaleString()}
                     </div>
                   </div>
                 </div>
@@ -393,7 +448,7 @@ export default function BonusPage() {
                   <th style={thStyle}>員工編號</th>
                   <th style={thStyle}>員工</th>
                   <th style={thStyle}>底薪</th>
-                  <th style={thStyle}>本月毛利</th>
+                  <th style={thStyle}>毛利手動輸入</th>
                   <th style={thStyle}>個人獎金</th>
                   <th style={thStyle}>店級獎金</th>
                   <th style={thStyle}>總薪資</th>
@@ -434,7 +489,30 @@ export default function BonusPage() {
                       </td>
 
                       <td style={tdStyle}>
-                        {employee.profit.toLocaleString()}
+                        <div style={profitEditWrapStyle}>
+                          <input
+                            style={tableInputStyle}
+                            type="number"
+                            value={profitMap[employee.employee_code] ?? 0}
+                            onChange={(e) =>
+                              handleProfitChange(
+                                employee.employee_code,
+                                e.target.value
+                              )
+                            }
+                          />
+                          <button
+                            style={miniSaveButtonStyle}
+                            onClick={() =>
+                              handleSaveProfit(employee.employee_code)
+                            }
+                            disabled={savingProfitCode === employee.employee_code}
+                          >
+                            {savingProfitCode === employee.employee_code
+                              ? "儲存中"
+                              : "儲存"}
+                          </button>
+                        </div>
                       </td>
 
                       <td style={tdStyle}>
@@ -518,6 +596,35 @@ const pageDescStyle = {
   fontSize: "18px",
   color: "#6b7280",
   marginBottom: "24px",
+};
+
+const filterBarStyle = {
+  display: "flex",
+  gap: "16px",
+  marginBottom: "24px",
+  flexWrap: "wrap" as const,
+};
+
+const filterItemStyle = {
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: "8px",
+};
+
+const filterLabelStyle = {
+  fontSize: "14px",
+  color: "#6b7280",
+  fontWeight: "bold" as const,
+};
+
+const selectStyle = {
+  padding: "12px 14px",
+  border: "1px solid #dbe4e8",
+  borderRadius: "12px",
+  fontSize: "15px",
+  outline: "none",
+  background: "#fff",
+  minWidth: "140px",
 };
 
 const summaryGridStyle = {
@@ -625,6 +732,17 @@ const saveButtonStyle = {
   cursor: "pointer",
 };
 
+const miniSaveButtonStyle = {
+  background: "#6fa58f",
+  color: "#fff",
+  border: "none",
+  borderRadius: "8px",
+  padding: "8px 12px",
+  fontSize: "13px",
+  cursor: "pointer",
+  whiteSpace: "nowrap" as const,
+};
+
 const cancelButtonStyle = {
   background: "#94a3b8",
   color: "#fff",
@@ -651,10 +769,16 @@ const actionGroupStyle = {
   flexWrap: "wrap" as const,
 };
 
+const profitEditWrapStyle = {
+  display: "flex",
+  gap: "8px",
+  alignItems: "center",
+};
+
 const tableStyle = {
   width: "100%",
   borderCollapse: "collapse" as const,
-  minWidth: "1100px",
+  minWidth: "1200px",
 };
 
 const thStyle = {
