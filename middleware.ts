@@ -3,8 +3,14 @@ import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next();
+  const pathname = request.nextUrl.pathname;
 
-  if (request.nextUrl.pathname === "/login") {
+  if (
+    pathname === "/login" ||
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/favicon.ico") ||
+    pathname.startsWith("/api")
+  ) {
     return response;
   }
 
@@ -29,24 +35,7 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const protectedRoutes = [
-    "/",
-    "/dashboard",
-    "/trends",
-    "/bonus",
-    "/performance",
-    "/pos-import",
-    "/top-products",
-    "/prescription",
-  ];
-
-  const isProtectedRoute = protectedRoutes.some((route) =>
-    route === "/"
-      ? request.nextUrl.pathname === "/"
-      : request.nextUrl.pathname.startsWith(route)
-  );
-
-  if (isProtectedRoute && !user) {
+  if (!user) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
@@ -54,14 +43,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/",
-    "/dashboard/:path*",
-    "/trends/:path*",
-    "/bonus/:path*",
-    "/performance/:path*",
-    "/pos-import/:path*",
-    "/top-products",
-    "/prescription",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
